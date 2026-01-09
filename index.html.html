@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>地宫 RPG — 职业觉醒 V3.2 (遗迹深处 - 韧性系统)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0" />
+<style>
+/* --- 响应式复古 2D 像素风格 --- */
+:root {
+    --bg: #0d0d14; --panel-bg: #1a1c2c; --text: #f1f1f1;
+    --border: #3f445f; --accent: #bd93f9; --hp: #ff5e5e; --gold: #f1fa8c;
+    --toughness: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; padding: 10px; background: var(--bg); color: var(--text);
+    font-family: 'Consolas', 'Monaco', monospace; image-rendering: pixelated;
+    display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
+}
+.game-container { display: flex; flex-wrap: wrap; gap: 15px; width: 100%; max-width: 1200px; justify-content: center; }
+.panel {
+    width: 360px; background: var(--panel-bg); padding: 15px; border: 4px solid var(--border);
+    box-shadow: 4px 4px 0px #000; display: flex; flex-direction: column; gap: 10px;
+}
+@media (max-width: 850px) { .panel { width: 100%; order: 2; } .display-area { order: 1; width: 100%; } }
+
+h3 { margin: 0; color: var(--accent); text-shadow: 2px 2px #000; font-size: 18px; }
+.btn {
+    padding: 10px; background: #2b2f36; border: 3px solid #555; color: #fff; cursor: pointer;
+    box-shadow: inset -3px -3px #000, inset 3px 3px #888; text-transform: uppercase; font-size: 11px; font-weight: bold;
+}
+.btn:active:not(:disabled) { box-shadow: inset 3px 3px #000; transform: translateY(2px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
+
+.display-area { flex: 1; min-width: 320px; max-width: 840px; position: relative; }
+canvas { width: 100%; height: auto; background: #000; border: 4px solid #333; display: block; }
+#log { 
+    width: 100%; height: 140px; background: #000; color: #7cff7c; font-size: 12px; 
+    padding: 10px; overflow-y: auto; border: 4px solid var(--border); margin-top: 10px; 
+}
+
+#name_overlay {
+    position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.98);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999;
+}
+#name_input {
+    padding: 15px; background: #000; color: var(--gold); border: 4px solid var(--border);
+    font-size: 20px; text-align:center; margin-bottom: 20px; outline:none;
+}
+
+.stats-info-box { background: rgba(0,0,0,0.3); padding: 8px; border: 1px solid #333; border-radius: 4px; font-size: 12px; margin-bottom: 5px; }
+.skill-container { background: #0c0d14; border: 2px solid #333; padding: 8px; min-height: 80px; }
+.skill-tag { 
+    background: #31344d; border: 1px solid #444; color: #fff; 
+    padding: 2px 6px; border-radius: 2px; font-size: 10px; cursor: pointer; display: inline-block; margin: 2px;
+}
+
+.eq-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.eq-slot { background: #050508; border: 2px solid #222; padding: 6px; min-height: 65px; display: flex; flex-direction: column; justify-content: center; font-size: 10px; cursor: pointer; }
+.eq-slot.active { border-color: var(--accent); }
+.eq-label { font-size: 9px; color: #666; margin-bottom: 2px; }
+.eq-name { font-size: 10px; font-weight: bold; }
+.eq-attr-mini { font-size: 9px; color: #50fa7b; }
+
+.hp-bar-ui { height: 10px; background: #333; border: 1px solid #000; margin-top: 4px; position: relative; }
+.hp-bar-fill { height: 100%; background: var(--hp); transition: width 0.3s; }
+
+.hidden { display: none !important; }
+
+.inventory-fixed { position: fixed; right: 20px; bottom: 20px; width: 280px; max-height: 45vh; overflow-y: auto; background: var(--panel-bg); border: 4px solid var(--border); padding: 10px; z-index: 50; }
+#extra_ui { position: fixed; right: 20px; top: 20px; width: 160px; background: var(--panel-bg); border: 4px solid var(--border); padding: 15px; z-index: 99; }
+
+@media (max-width: 1199px) {
+    .inventory-fixed { position:static; width: 100%; background: var(--panel-bg); border: 4px solid var(--border); padding: 10px; margin-top: 10px; }
+    #extra_ui { position:static; width: 100%; background: var(--panel-bg); border: 4px solid var(--border); padding: 10px; margin-top: 10px; }
+}
+.item { border-bottom: 1px solid #333; padding: 8px 0; }
+.item small { color: #50fa7b; display: block; margin: 3px 0; font-size: 10px; }
+</style>
+</head>
+<body>
+
+<div id="name_overlay">
+    <h2 style="color:var(--accent); text-shadow:2px 2px #000;">踏入地宫...</h2>
+    <p style="color:#aaa;">为你的人物命名：</p>
+    <input type="text" id="name_input" maxlength="10" placeholder="在此输入名字" />
+    <button class="btn" style="padding:15px 40px; font-size:18px; background:#2e4d2e;" onclick="Game.FlowModule.setName()">进入地宫</button>
+</div>
+
+<div class="game-container">
+    <div class="panel">
+        <h3 id="ui_player_name">冒险者</h3>
+        
+        <div class="stats-info-box">
+            <div style="display:flex; justify-content:space-between;">
+                <span>当前层数: <b id="ui_stage" style="color:var(--accent)">1</b></span>
+                <span>击杀总数: <b id="ui_kills" style="color:#ff5555">0</b></span>
+            </div>
+            <div style="margin-top: 5px; font-size: 11px;">
+                <span>经验值: <b id="ui_exp_val" style="color:#8be9fd">0 / 100</b></span>
+            </div>
+            <div id="newbie_buff_ui" style="font-size: 10px; color: #50fa7b; margin-top: 4px; font-weight: bold;"></div>
+        </div>
+
+        <div id="stats_panel" style="background: rgba(0,0,0,0.4); padding: 8px; border-radius: 4px;">
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:var(--hp)">HP: <span id="ui_hp">0/0</span></span>
+                <span style="color:#ffb86c">ATK: <span id="ui_atk">0</span></span>
+            </div>
+            <div class="hp-bar-ui"><div id="ui_hp_bar" class="hp-bar-fill"></div></div>
+            <div style="display:flex; justify-content:space-between; margin-top: 8px;">
+                <span style="color:#8be9fd">DEF: <span id="ui_def">0</span></span>
+                <span style="color:var(--gold)">CRT: <span id="ui_cr">0%</span></span>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:var(--accent)">CDMG: <span id="ui_cdmg">0%</span></span>
+                <span style="color:var(--gold)">GOLD: <span id="ui_gold">0</span></span>
+            </div>
+        </div>
+
+        <div style="font-size: 13px; color: var(--accent);">
+            Lv <span id="lv">1</span> | <span id="ui_class_name">冒险者</span>
+        </div>
+        <div style="font-size: 11px;">可用属性点: <span id="pts" style="color:var(--gold)">10</span></div>
+
+        <div style="display:flex; gap:4px; flex-wrap:wrap;">
+            <button class="btn" style="flex:1; padding:5px" onclick="Game.PlayerModule.addAttr('STR')">STR</button>
+            <button class="btn" style="flex:1; padding:5px" onclick="Game.PlayerModule.addAttr('DEX')">DEX</button>
+            <button class="btn" style="flex:1; padding:5px" onclick="Game.PlayerModule.addAttr('AGI')">AGI</button>
+            <button class="btn" style="flex:1; padding:5px" onclick="Game.PlayerModule.addAttr('HP')">VIT</button>
+            <button class="btn" style="flex:1; padding:5px" onclick="Game.PlayerModule.addAttr('CTR')">CRT</button>
+        </div>
+        <div style="display:flex; gap:4px; flex-wrap:wrap; margin-top: 2px;">
+            <button class="btn" style="flex:1; padding:5px; background: #3d4a3d;" onclick="Game.PlayerModule.addAttr('STR', 10)">+10S</button>
+            <button class="btn" style="flex:1; padding:5px; background: #3d4a3d;" onclick="Game.PlayerModule.addAttr('DEX', 10)">+10D</button>
+            <button class="btn" style="flex:1; padding:5px; background: #3d4a3d;" onclick="Game.PlayerModule.addAttr('AGI', 10)">+10A</button>
+            <button class="btn" style="flex:1; padding:5px; background: #3d4a3d;" onclick="Game.PlayerModule.addAttr('HP', 10)">+10V</button>
+            <button class="btn" style="flex:1; padding:5px; background: #3d4a3d;" onclick="Game.PlayerModule.addAttr('CTR', 10)">+10C</button>
+        </div>
+
+        <div class="skill-container">
+            <div id="skill_list"></div>
+            <div id="skill_desc" style="font-size:9px; color:#6272a4; margin-top:5px;">31级解锁职业路线</div>
+        </div>
+
+        <div class="eq-container">
+            <div class="eq-slot" id="slot_weapon" onclick="Game.InventoryModule.unequip('weapon')"><div class="eq-label">武器</div><div class="eq-name" id="eq_weapon">Empty</div><div class="eq-attr-mini" id="attr_weapon"></div></div>
+            <div class="eq-slot" id="slot_armor" onclick="Game.InventoryModule.unequip('armor')"><div class="eq-label">盔甲</div><div class="eq-name" id="eq_armor">Empty</div><div class="eq-attr-mini" id="attr_armor"></div></div>
+            <div class="eq-slot" id="slot_boots" onclick="Game.InventoryModule.unequip('boots')"><div class="eq-label">鞋子</div><div class="eq-name" id="eq_boots">Empty</div><div class="eq-attr-mini" id="attr_boots"></div></div>
+            <div class="eq-slot" id="slot_ring" onclick="Game.InventoryModule.unequip('ring')"><div class="eq-label">饰品</div><div class="eq-name" id="eq_ring">Empty</div><div class="eq-attr-mini" id="attr_ring"></div></div>
+        </div>
+
+        <div id="class_select_area" class="hidden">
+            <div style="font-size: 11px; color: #ff79c6; margin-bottom: 5px; font-weight: bold;">[ 觉醒 ] 请选择你的职业路线：</div>
+            <select id="classSelect" style="background:#000; color:#fff; padding:8px; border:2px solid #ff79c6; width:100%;">
+                <option value="">-- 请点击选择 --</option>
+                <option value="MELEE">战士路线 (强力减伤/加防)</option>
+                <option value="RANGED">猎人路线 (极高攻速/连击)</option>
+            </select>
+        </div>
+
+        <button class="btn" id="btn_start" style="background: #2e4d2e; margin-top: 10px;" onclick="Game.FlowModule.start()">踏入地宫 (START)</button>
+        <button class="btn hidden" id="nextBtn" style="background: #2d3e50; margin-top: 10px;" onclick="Game.FlowModule.next()">进入下一层 (NEXT)</button>
+    </div>
+
+    <div class="display-area">
+        <canvas id="cv" width="840" height="480"></canvas>
+        <div id="log"></div>
+        
+        <div id="extra_ui">
+            <div id="ui_gold_extra" style="color:var(--gold); margin-bottom:10px; font-weight:bold;">Gold: 100</div>
+            <button class="btn" style="width:100%; font-size:10px; margin-bottom:5px;" onclick="Game.ShopModule.buyHeal()">治疗 (100G)</button>
+            <button class="btn" style="width:100%; font-size:10px;" onclick="Game.ShopModule.buyChest()">抽奖 (100G)</button>
+        </div>
+
+        <div id="inventory_bag" class="inventory-fixed">
+            <div style="font-size: 12px; border-bottom: 2px solid var(--border); margin-bottom: 10px; color: var(--accent); font-weight:bold;">INVENTORY</div>
+            <div id="bag_content"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const Game = {
+    Config: {
+        MONSTER_BASE_STATS: { HP: 80, ATK: 15, DEF: 5 },
+        MONSTER_GROWTH: { HP: 12, ATK: 2, DEF: 1 },
+        BOSS_BASE_STATS: { HP: 220, ATK: 28, DEF: 18 },
+        BOSS_GROWTH: { HP: 45, ATK: 5, DEF: 3 },
+        EXP_DROP_MULT: 1.1, 
+        EXP_MULT_LV30: 10, EXP_MULT_LV60: 5, 
+        STR_TO_ATK: 3, DEX_TO_DEF: 2, AGI_INTERVAL_PCT: 0.005,
+        POINT_TO_CR: 0.01, POINT_TO_CDMG: 0.05, MIN_INTERVAL_MS: 333,
+        QUALITY_MULT: [1.0, 1.4, 2.0, 3.5],
+        QUALITY_NAMES: ['普通', '精良', '稀有', '史诗'],
+        QUALITY_COLORS: ['#aaa', '#50fa7b', '#8be9fd', '#ff79c6'],
+        CLASS_DB: {
+            adventurer: { name: "冒险者", statGain: { STR: 1, DEX: 1, HP: 1 }, skills: [] },
+            MELEE: {
+                stages: [
+                    { min: 31, max: 45, name: "战士", statGain: { STR: 3, DEX: 4, HP: 8 }, skills: ["slash", "战士证明"] },
+                    { min: 46, max: 60, name: "骑士", statGain: { STR: 5, DEX: 6, HP: 15 }, skills: ["slash", "真实", "战士证明"] },
+                    { min: 61, max: 999, name: "战神", statGain: { STR: 10, DEX: 10, HP: 30 }, skills: ["slash", "真实", "圣佑", "女神", "战士证明"] }
+                ]
+            },
+            RANGED: {
+                stages: [
+                    { min: 31, max: 45, name: "猎人", statGain: { STR: 3, AGI: 3, HP: 2, CTR: 3 }, skills: ["volley", "闪避"] },
+                    { min: 46, max: 60, name: "射手", statGain: { STR: 5, AGI: 5, HP: 5, CTR: 5 }, skills: ["volley", "闪避+", "爆头", "风神"] },
+                    { min: 61, max: 999, name: "狙神", statGain: { STR: 20, AGI: 10, DEX: 10, HP: 10, CTR: 20 }, skills: ["volley", "闪避+", "爆头", "风神", "连发"] }
+                ]
+            }
+        },
+        SKILL_REGISTRY: {
+            slash: { id: "slash", desc: "斩击: 20%几率造成1.5倍伤害" },
+            volley: { id: "volley", desc: "箭雨: 20%几率造成2.0倍伤害" },
+            真实: { id: "真实", desc: "被动: 攻击附加目标25%防御的额外伤害" },
+            圣佑: { id: "圣佑", desc: "被动: 最终伤害提升20%" },
+            女神: { id: "女神", desc: "被动: 受伤永久减免50%" },
+            战士证明: { id: "战士证明", desc: "被动: 受损永久减少20%" },
+            闪避: { id: "闪避", desc: "被动: 10%概率避开伤害" },
+            "闪避+": { id: "闪避+", desc: "被动: 20%概率避开伤害" },
+            爆头: { id: "爆头", desc: "特技: 1%几率秒杀非Boss" },
+            风神: { id: "风神", desc: "被动: 20%概率双连击" },
+            连发: { id: "连发", desc: "特技: 20%概率5连击" },
+            管理员: { id: "管理员", desc: "特权: 全属性封顶且1000%额外经验" }
+        }
+    },
+
+    Assets: {
+        Palette: {'.':'rgba(0,0,0,0)','B':'#000000','W':'#ffffff','G':'#555555','S':'#d0d0d0','6':'#77dd77','5':'#ff9999','2':'#7fc7ff','7':'#ffcc66','9':'#c089ff','Y':'#f7e26b','A':'#9af2a0','T':'#77dd77','1':'#ffd9b3','3':'#333333','R':'#ff0000','O':'#ff6600'},
+        PlayerSprite: ["................","...BBBBBB.......","..BWWWWWWB......",".BWWWWWWWWB.....",".BWWWBWWBWB.....",".BWWWBWWBWB..YY.",".BGWWWWWWGB.YWY.","..BGGGGGGGB.YWY.","...BBBBBB.YWY...","...BWWWWBYWY....","...BWWWWBRY.....","...BWWWWBYYY....","...BWWBWB.YY....","...BWWBWB.......","...BBBBBB.......","................"],
+        Monsters: {
+            MONSTER_SLIME: ["................","................","......BBBB......","....BBAA66BB....","...BAAAA666TB...","..BAAAAAA666TB..","..BABAABA666TB..","..BABAABA666TB..",".BAAAAAA666TTTB.",".B6AAAA666TTTTB.",".B6666666TTTTTB.",".B6666TTTTTTB..","..BBBBBBBBBBBB..","................","................","................"],
+            MONSTER_GOBLIN: ["......33.......","....3366333.....","...36688663.....","..B36888663BB...",".3836666666663..",".363666666633B..","..33B6363666333..","...3636B66633...","...3666666......","...33W3W633.....","..3WW33333......",".WWWW33363......",".WWWWB33333.....","......333333....",".....3333333....","................"],
+            MONSTER_SKELETON: ["......BBBBBBBB..","..2..BGGWWWWGGB.","..22.BGWWWWWWGGB","..22.BWBWWBWGGB","..22.BWBWWBWGGB","..22.BWWWWWWWGGB","..22.BBWBWBWGGB.","..7777.BBBBBBBB.","..BB..BGGGGGWB..",".BWWB.BWWGWWWBB.",".BWWB.BGGGGGWWWB","..BB..BWWGWWBWWB","..7...BGGGGGWBBB","..7...BWWBBBWWB.","......BWWB.BWWB.","......BBBB.BBBB."]
+        },
+        Bosses: {
+            BOSS_DRAGON: [".BBB.BBB........","BB7B.B7BB.......","B77BBB77B.......","BBTTTTTTBB......",".BTBTBTT6B......",".BTBTBTT6B......","BTTTTTTTBBB.....","BBTBATTBB6BBB...","BTTTTTBTTB6B6B..",".BBBBBTTTTB6BB..","..BAATBTTTTB6B..",".BTAABTTBATTB...",".BBAABBTBAAAB...","...BAAAB.BBB....","....BBB.........","................"]
+        }
+    },
+
+    State: {
+        player: {
+            name: '冒险者', isGM: false,
+            classRoute: 'adventurer', classStage: '冒险者', 
+            classPass: [], level: 1, exp: 0, expNext: 100, freePts: 10,
+            base: { ATK: 25, DEF: 12, HP: 120, CTR: 0.10, CDMG: 0.5 },
+            attrib: { STR: 0, DEX: 0, AGI: 0, HP: 0, CTR: 0 },
+            hp: null, gold: 100, inv: [],
+            equip: { weapon: null, armor: null, boots: null, ring: null }
+        },
+        stage: 1, enemy: null, running: false,
+        timers: { player: null, enemy: null },
+        stat: { kills: 0 }, 
+        fx: { crits: [], flashes: [], slashes: [], particles: [] },
+        anim: { shakeP: 0, pOff: 0, eOff: 0, frame: 0 },
+        positions: { pX: 180, eX: 520, y: 220 }
+    },
+
+    PlayerModule: {
+        calcDerived() {
+            const p = Game.State.player; const cfg = Game.Config;
+            const sumEq = (k) => {
+                let s = 0;
+                for (let slot in p.equip) { if (p.equip[slot] && p.equip[slot].attrs && p.equip[slot].attrs[k]) s += p.equip[slot].attrs[k]; }
+                return s;
+            };
+            let STR = p.attrib.STR + sumEq('STR');
+            let DEX = p.attrib.DEX + sumEq('DEX');
+            let AGI = p.attrib.AGI + sumEq('AGI');
+            let VIT = p.attrib.HP + sumEq('HP');
+            let CTR_ATTR = p.attrib.CTR + sumEq('CTR');
+            let ATK = p.base.ATK + STR * cfg.STR_TO_ATK + Math.floor(AGI / 2);
+            let DEF = p.base.DEF + DEX * cfg.DEX_TO_DEF;
+            let MAXHP = p.base.HP + (DEX * 5) + (VIT * 20);
+            let CR = Math.max(0, Math.min(0.95, p.base.CTR + CTR_ATTR * cfg.POINT_TO_CR));
+            let CDMG = Math.max(0, Math.min(9.0, p.base.CDMG + CTR_ATTR * cfg.POINT_TO_CDMG));
+            return { ATK, DEF, MAXHP, CR, CDMG, STR, DEX, AGI };
+        },
+        addAttr(key, amount = 1) {
+            const p = Game.State.player;
+            const realAmount = Math.min(p.freePts, amount);
+            if (realAmount > 0) { p.attrib[key] += realAmount; p.freePts -= realAmount; Game.UIModule.update(); }
+        }
+    },
+
+    EnemyModule: {
+        generate() {
+            const s = Game.State.stage; const isBoss = (s % 10 === 0);
+            const pool = isBoss ? Object.entries(Game.Assets.Bosses) : Object.entries(Game.Assets.Monsters);
+            const [id, sprite] = pool[Math.floor(Math.random() * pool.length)];
+            const cfg = Game.Config; const raw = isBoss ? cfg.BOSS_BASE_STATS : cfg.MONSTER_BASE_STATS;
+            const grow = isBoss ? cfg.BOSS_GROWTH : cfg.MONSTER_GROWTH;
+            const lv = s - 1; let mul = 1 + (isBoss ? Math.floor(s/10)*0.8 : Math.floor(s/1)*0.15);
+            const HP = Math.floor((raw.HP + grow.HP * lv) * mul);
+            const DEF = Math.floor((raw.DEF + grow.DEF * lv) * mul * 0.5);
+            
+            // 怪物最大韧性计算公式
+            const monsterDEX = Math.floor(raw.DEF + grow.DEF * lv); 
+            // 普通怪: 100% + (DEX * 0.1%) | Boss: 200% + (DEX * 0.5%)
+            const maxToughnessPercent = isBoss ? (2.0 + (monsterDEX * 0.005)) : (1.0 + (monsterDEX * 0.001));
+
+            return {
+                name: id.replace('MONSTER_','').replace('BOSS_',''), sprite, isBoss, MAXHP: HP, HP: HP,
+                ATK: Math.floor((raw.ATK + grow.ATK * lv) * mul), DEF: DEF,
+                dropEXP: Math.floor(HP * cfg.EXP_DROP_MULT),
+                maxToughnessPercent: maxToughnessPercent,
+                toughnessPercent: maxToughnessPercent,
+                breakStun: 0
+            };
+        }
+    },
+
+    InventoryModule: {
+        generate() {
+            const cfg = Game.Config; const qroll = Math.random();
+            let qi = qroll > 0.98 ? 3 : (qroll > 0.85 ? 2 : (qroll > 0.5 ? 1 : 0));
+            const slots = ['weapon', 'armor', 'boots', 'ring'];
+            const slot = slots[Math.floor(Math.random() * slots.length)];
+            const baseVal = Math.floor(Game.State.player.level * 0.8 + Game.State.stage * 0.5);
+            const mult = cfg.QUALITY_MULT[qi];
+            let attrs = {};
+            if (slot === 'weapon') attrs.STR = Math.max(1, Math.floor(baseVal * mult));
+            else if (slot === 'armor') attrs.DEX = Math.max(1, Math.floor(baseVal * 0.6 * mult));
+            else if (slot === 'boots') attrs.AGI = Math.max(1, Math.floor(baseVal * 0.5 * mult));
+            else attrs.CTR = Math.max(1, Math.floor(baseVal * 0.3 * mult));
+            return { name: cfg.QUALITY_NAMES[qi] + slot.toUpperCase(), quality: qi, slot, attrs };
+        },
+        equip(idx) {
+            const p = Game.State.player; const item = p.inv[idx];
+            const prev = p.equip[item.slot]; p.equip[item.slot] = item;
+            p.inv.splice(idx, 1); if (prev) p.inv.push(prev);
+            const d = Game.PlayerModule.calcDerived(); p.hp = Math.min(p.hp || d.MAXHP, d.MAXHP);
+            Game.UIModule.update();
+        },
+        unequip(slot) {
+            const p = Game.State.player; if (!p.equip[slot]) return;
+            p.inv.push(p.equip[slot]); p.equip[slot] = null;
+            const d = Game.PlayerModule.calcDerived(); p.hp = Math.min(p.hp, d.MAXHP);
+            Game.UIModule.update();
+        }
+    },
+
+    CombatModule: {
+        triggerSingleHit(d, isExtraHit = false) {
+            const st = Game.State; if (!st.enemy) return;
+            let dmgMul = 1.0; let skillName = "";
+            if (st.player.classPass.includes("slash") && Math.random() < 0.2) { dmgMul *= 1.5; skillName = "[斩击] "; }
+            if (st.player.classPass.includes("volley") && Math.random() < 0.2) { dmgMul *= 2.0; skillName = "[箭雨] "; }
+            if (st.player.classPass.includes("圣佑")) dmgMul *= 1.2;
+            let isCrit = Math.random() < d.CR;
+            
+            let baseDmg = Math.max(1, d.ATK - (st.enemy.DEF * 0.5));
+            let finalDamage = Math.floor(baseDmg * dmgMul * (isCrit ? (1 + d.CDMG) : 1));
+            if (st.player.classPass.includes("爆头") && !st.enemy.isBoss && Math.random() < 0.01) { finalDamage = st.enemy.HP; skillName = "[爆头!] "; }
+
+            const oldToughness = st.enemy.toughnessPercent;
+
+            // 结算 HP 伤害规则：韧性>0则90%免伤，韧性=0则150%伤害结算
+            let hpDamage = (oldToughness > 0) ? (finalDamage * 0.1) : (finalDamage * 1.5);
+            hpDamage = Math.floor(Math.max(0, hpDamage));
+            st.enemy.HP -= hpDamage;
+
+            // 结算韧性扣减规则：25% + ATK * 0.25%
+            const toughnessReduction = 0.25 + (d.ATK * 0.0025);
+            st.enemy.toughnessPercent -= toughnessReduction;
+            if (st.enemy.toughnessPercent < 0) st.enemy.toughnessPercent = 0;
+
+            // 击破判定：韧性从 >0 变为 0 的瞬间
+            if (oldToughness > 0 && st.enemy.toughnessPercent === 0) {
+                // 追加击破伤害 = 最大韧性百分比 * 攻击力 (无视防御)
+                let breakDamage = Math.floor(st.enemy.maxToughnessPercent * d.ATK);
+                st.enemy.HP -= breakDamage;
+                st.enemy.breakStun = 2; // 设置 2 次不行动
+
+                Game.UIModule.pushLog(`<span style="color:var(--toughness)">[ 击破！] 额外造成 ${breakDamage} 伤害，怪物眩晕 2 回合。</span>`);
+                Game.RenderModule.addParticles(st.positions.eX + 32, st.positions.y + 32, '#ffffff');
+                Game.RenderModule.addFloatingText(st.positions.eX + 32, st.positions.y - 40, `BREAK! -${breakDamage}`, "#ffffff");
+            }
+
+            st.enemy._hit = 6;
+            st.anim.pOff = isExtraHit ? 10 : 30; 
+            setTimeout(() => { if(st.anim) st.anim.pOff = 0; }, 100);
+            Game.RenderModule.addSlash(st.positions.eX + 32, st.positions.y + 32);
+            Game.RenderModule.addFloatingText(st.positions.eX + 16, st.positions.y - 10, (isCrit ? "CRIT " : "") + hpDamage, isCrit ? "#f1fa8c" : "#fff");
+            
+            let logText = skillName ? `<span style="color:#ff79c6">${skillName}</span>` : "";
+            if (isCrit) Game.UIModule.pushLog(`<span style="color:var(--gold)">玩家暴击!! -> ${logText}${hpDamage} 伤害</span>`);
+            else Game.UIModule.pushLog(`玩家攻击 -> ${logText}${hpDamage} 伤害`);
+        },
+        playerAttack() {
+            const st = Game.State; if (!st.running || !st.enemy) return;
+            const d = Game.PlayerModule.calcDerived();
+            const interval = Math.max(Game.Config.MIN_INTERVAL_MS, Math.floor(1000 * (1 - d.AGI * Game.Config.AGI_INTERVAL_PCT)));
+            st.timers.player = setTimeout(() => {
+                if (!st.running || !st.enemy) return;
+                let hitCount = 1;
+                if (st.player.classPass.includes("连发") && Math.random() < 0.2) { hitCount = 5; Game.UIModule.pushLog(`<span style="color:#ffb86c">[连发] 5连击!</span>`); }
+                else if (st.player.classPass.includes("风神") && Math.random() < 0.2) { hitCount = 2; Game.UIModule.pushLog(`<span style="color:#8be9fd">[风神] 双连击!</span>`); }
+                for(let i=0; i < hitCount; i++) { if(st.enemy && st.enemy.HP > 0) this.triggerSingleHit(d, i > 0); }
+                if (st.enemy && st.enemy.HP <= 0) Game.FlowModule.onEnemyDead(); else this.playerAttack();
+                Game.UIModule.update();
+            }, interval);
+        },
+        enemyAttack() {
+            const st = Game.State;
+            const step = () => {
+                if (!st.running || !st.enemy) return;
+                st.timers.enemy = setTimeout(() => {
+                    if (!st.running || !st.enemy) return;
+
+                    // 怪物行动规则判断
+                    if (st.enemy.breakStun > 0) {
+                        st.enemy.breakStun -= 1;
+                        Game.UIModule.pushLog(`<span style="color:#aaa">${st.enemy.name} 眩晕中...</span>`);
+                        // 眩晕结束逻辑：恢复韧性
+                        if (st.enemy.breakStun === 0) {
+                            st.enemy.toughnessPercent = st.enemy.maxToughnessPercent;
+                            Game.UIModule.pushLog(`<span style="color:var(--toughness)">${st.enemy.name} 恢复了韧性！</span>`);
+                        }
+                        step(); Game.UIModule.update(); return;
+                    }
+
+                    const d = Game.PlayerModule.calcDerived();
+                    st.anim.eOff = -60; 
+                    setTimeout(() => {
+                        if (!st.running || !st.enemy) return;
+                        st.anim.eOff = 0; 
+                        let dodge = (st.player.classPass.includes("闪避+") ? 0.2 : (st.player.classPass.includes("闪避") ? 0.1 : 0));
+                        if (Math.random() < dodge) { Game.UIModule.pushLog(`<span style="color:#50fa7b">[玩家闪避]</span>`); } 
+                        else {
+                            let dmg = Math.max(1, Math.floor(st.enemy.ATK - d.DEF * 0.5));
+                            if (st.player.classPass.includes("战士证明")) dmg = Math.floor(dmg * 0.8);
+                            if (st.player.classPass.includes("女神")) dmg = Math.floor(dmg * 0.5);
+                            st.player.hp -= dmg; st.anim.shakeP = 15;
+                            Game.RenderModule.addFlash('player');
+                            Game.RenderModule.addParticles(st.positions.pX + 32, st.positions.y + 32, '#ff5555');
+                            Game.RenderModule.addFloatingText(st.positions.pX + 16, st.positions.y - 10, `-${dmg}`, "#ff5555");
+                            Game.UIModule.pushLog(`${st.enemy.name}攻击 -> 玩家受损 ${dmg}`);
+                        }
+                        if (st.player.hp <= 0) Game.FlowModule.onPlayerDead(); else step();
+                        Game.UIModule.update();
+                    }, 150); 
+                }, 1400);
+            }; step();
+        }
+    },
+
+    FlowModule: {
+        setName() {
+            const name = document.getElementById('name_input').value.trim();
+            if (name === "") return alert("勇者，请留下你的名号！");
+            const st = Game.State;
+            st.player.name = name;
+            if (name === "CJ7") {
+                st.player.isGM = true;
+                st.player.attrib = { STR: 999, DEX: 999, AGI: 999, HP: 999, CTR: 999 };
+                st.player.classPass.push("管理员");
+            }
+            document.getElementById('name_overlay').style.display = 'none';
+            Game.UIModule.update();
+            Game.UIModule.pushLog(`开始冒险！${name}`);
+        },
+        start() {
+            const st = Game.State; if (st.running) return;
+            if (st.player.level >= 31 && st.player.classRoute === 'adventurer') {
+                const sel = document.getElementById('classSelect').value;
+                if (!sel) { document.getElementById('class_select_area').classList.remove('hidden'); return alert("请先选择职业！"); }
+                st.player.classRoute = sel;
+                document.getElementById('classSelect').disabled = true;
+                document.getElementById('class_select_area').classList.add('hidden');
+            }
+            st.enemy = Game.EnemyModule.generate(); st.running = true;
+            if (st.player.hp === null) st.player.hp = Game.PlayerModule.calcDerived().MAXHP;
+            document.getElementById('btn_start').classList.add('hidden');
+            document.getElementById('nextBtn').classList.add('hidden');
+            Game.UIModule.pushLog(`<strong>--- 深入地宫第 ${st.stage} 层 ---</strong>`);
+            Game.CombatModule.playerAttack(); Game.CombatModule.enemyAttack();
+        },
+        onEnemyDead() {
+            const st = Game.State; st.running = false; clearTimeout(st.timers.player); clearTimeout(st.timers.enemy);
+            st.stat.kills++; 
+            let mult = st.player.level < 30 ? Game.Config.EXP_MULT_LV30 : (st.player.level < 60 ? Game.Config.EXP_MULT_LV60 : 1);
+            if (st.player.isGM) mult *= 10;
+            let gainedExp = Math.floor(st.enemy.dropEXP * mult);
+            Game.UIModule.pushLog(`胜利！获得经验 ${gainedExp} (${mult}x)`);
+            st.player.exp += gainedExp;
+            while (st.player.exp >= st.player.expNext) {
+                st.player.exp -= st.player.expNext; st.player.level++; st.player.freePts += 5;
+                if (st.player.classRoute === 'adventurer') {
+                    const gain = Game.Config.CLASS_DB.adventurer.statGain;
+                    for (let attr in gain) st.player.attrib[attr] += gain[attr];
+                    if (st.player.level === 31) document.getElementById('class_select_area').classList.remove('hidden');
+                } else {
+                    const route = Game.Config.CLASS_DB[st.player.classRoute];
+                    const sData = route.stages.find(s => st.player.level >= s.min && st.player.level <= s.max) || route.stages[route.stages.length - 1];
+                    st.player.classStage = sData.name; st.player.classPass = [...new Set([...st.player.classPass, ...sData.skills])]; 
+                    for (let attr in sData.statGain) st.player.attrib[attr] += sData.statGain[attr];
+                }
+                st.player.expNext = Math.floor(st.player.expNext * 1.15);
+                st.player.hp = Game.PlayerModule.calcDerived().MAXHP;
+            }
+            st.player.gold += Math.floor(st.enemy.MAXHP/10);
+            if (Math.random() < 0.4) st.player.inv.push(Game.InventoryModule.generate());
+            st.enemy = null; 
+            document.getElementById('nextBtn').classList.remove('hidden'); 
+            Game.UIModule.update();
+        },
+        onPlayerDead() { alert(`冒险结束！共通过 ${Game.State.stage} 层。`); location.reload(); },
+        next() { Game.State.stage++; document.getElementById('nextBtn').classList.add('hidden'); this.start(); }
+    },
+
+    UIModule: {
+        update() {
+            const st = Game.State, p = st.player, d = Game.PlayerModule.calcDerived();
+            const get = (id) => document.getElementById(id);
+            if (!get('ui_hp')) return;
+            get('ui_player_name').innerText = p.name;
+            get('ui_stage').innerText = st.stage;
+            get('ui_kills').innerText = st.stat.kills;
+            get('ui_exp_val').innerText = `${p.exp} / ${p.expNext}`;
+            const buffEl = get('newbie_buff_ui');
+            if (p.level < 30) buffEl.innerText = "新人加速: 1000%";
+            else if (p.level < 60) buffEl.innerText = "成长加速: 500%";
+            else buffEl.innerText = "";
+            get('ui_hp').innerText = `${Math.max(0,Math.floor(p.hp))}/${Math.floor(d.MAXHP)}`;
+            get('ui_hp_bar').style.width = (Math.max(0, p.hp / d.MAXHP) * 100) + "%";
+            get('ui_atk').innerText = Math.floor(d.ATK); get('ui_def').innerText = Math.floor(d.DEF);
+            get('ui_cr').innerText = (d.CR * 100).toFixed(0) + '%'; get('ui_cdmg').innerText = (d.CDMG * 100).toFixed(0) + '%';
+            get('ui_gold').innerText = p.gold; get('lv').innerText = p.level; get('pts').innerText = p.freePts;
+            get('ui_class_name').innerText = p.classStage;
+            const sl = get('skill_list'); sl.innerHTML = '';
+            p.classPass.forEach(s => {
+                const tag = document.createElement('div'); tag.className = 'skill-tag'; tag.innerText = s;
+                tag.onclick = () => { get('skill_desc').innerText = `${s}: ${Game.Config.SKILL_REGISTRY[s]?.desc || '???'}`; };
+                sl.appendChild(tag);
+            });
+            ['weapon', 'armor', 'boots', 'ring'].forEach(s => {
+                const item = p.equip[s]; const slotEl = get('slot_'+s);
+                const nameEl = get('eq_'+s); const attrEl = get('attr_'+s);
+                if (item) { 
+                    slotEl.classList.add('active'); nameEl.innerText = item.name; 
+                    nameEl.style.color = Game.Config.QUALITY_COLORS[item.quality]; 
+                    attrEl.innerText = Object.entries(item.attrs).map(([k,v])=>`${k}+${v}`).join(' '); 
+                } else { slotEl.classList.remove('active'); nameEl.innerText = 'Empty'; attrEl.innerText = ''; }
+            });
+            const bag = get('bag_content'); bag.innerHTML = '';
+            p.inv.forEach((it, i) => {
+                const div = document.createElement('div'); div.className = 'item';
+                const attrText = Object.entries(it.attrs).map(([k,v])=>`<b>${k}+${v}</b>`).join(' ');
+                div.innerHTML = `<span style="color:${Game.Config.QUALITY_COLORS[it.quality]}">${it.name}</span><small>${attrText}</small>
+                    <button class="btn" style="padding:4px; font-size:10px" onclick="Game.InventoryModule.equip(${i})">装备</button>
+                    <button class="btn" style="padding:4px; font-size:10px; background:#422" onclick="Game.State.player.inv.splice(${i},1);Game.UIModule.update();">丢弃</button>`;
+                bag.appendChild(div);
+            });
+        },
+        pushLog(m) { const l = document.getElementById('log'); const item = document.createElement('div'); item.innerHTML = `> ${m}`; l.appendChild(item); l.scrollTop = l.scrollHeight; }
+    },
+
+    RenderModule: {
+        ctx: null, 
+        init() { this.ctx = document.getElementById('cv').getContext('2d'); this.loop(); },
+        drawDungeonBackground() {
+            const ctx = this.ctx; const w = 840; const h = 480; const horizon = 265;
+            ctx.fillStyle = '#1a1c2c'; ctx.fillRect(0, 0, w, horizon);
+            const brickW = 60; const brickH = 30;
+            for (let y = 0; y < horizon; y += brickH) {
+                let offset = (Math.floor(y / brickH) % 2) * (brickW / 2);
+                for (let x = -brickW; x < w; x += brickW) {
+                    ctx.strokeStyle = '#0d0d14'; ctx.lineWidth = 2; ctx.strokeRect(x + offset, y, brickW, brickH);
+                    if ((x + y) % 13 === 0) {
+                        ctx.beginPath(); ctx.strokeStyle = '#0a0a10';
+                        ctx.moveTo(x + offset + 10, y + 5); ctx.lineTo(x + offset + 25, y + 20); ctx.stroke();
+                    }
+                }
+            }
+            ctx.fillStyle = '#292c3e'; ctx.fillRect(0, horizon, w, h - horizon);
+            ctx.fillStyle = '#0d0d14'; ctx.fillRect(0, horizon - 4, w, 8);
+            this.drawTorch(120, 100); this.drawTorch(420, 80); this.drawTorch(720, 100);
+            const grad = ctx.createRadialGradient(w/2, h/2, 150, w/2, h/2, 600);
+            grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+        },
+        drawTorch(x, y) {
+            const ctx = this.ctx; const f = Game.State.anim.frame;
+            ctx.fillStyle = '#3f445f'; ctx.fillRect(x - 4, y, 8, 20);
+            const flicker = Math.sin(f * 0.2) * 3;
+            ctx.fillStyle = '#ff6600'; ctx.fillRect(x - 6 + (f%4-2), y - 15 + flicker, 12, 12);
+            ctx.fillStyle = '#f1fa8c'; ctx.fillRect(x - 3, y - 10 + flicker, 6, 8);
+            const lightGrad = ctx.createRadialGradient(x, y-5, 5, x, y-5, 60 + flicker*2);
+            lightGrad.addColorStop(0, 'rgba(255, 150, 0, 0.2)'); lightGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = lightGrad; ctx.fillRect(x - 80, y - 80, 160, 160);
+        },
+        drawSprite(sp, x, y, sc = 4) {
+            const p = Game.Assets.Palette;
+            sp.forEach((row, r) => { for (let c = 0; c < row.length; c++) { if (row[c] !== '.') { this.ctx.fillStyle = p[row[c]] || '#fff'; this.ctx.fillRect(x + c * sc, y + r * sc, sc, sc); } } });
+        },
+        addSlash(x, y) { Game.State.fx.slashes.push({ x, y, life: 15 }); },
+        addFlash(side) { Game.State.fx.flashes.push({ side, life: 8 }); },
+        addFloatingText(x, y, text, color) { Game.State.fx.crits.push({ x, y, vy: -1.2, life: 45, text, color }); },
+        addParticles(x, y, color) {
+            for(let i=0; i<8; i++){
+                Game.State.fx.particles.push({
+                    x, y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 20, color
+                });
+            }
+        },
+        loop() {
+            const ctx = this.ctx, st = Game.State; if(!ctx) return;
+            st.anim.frame++; this.drawDungeonBackground();
+            let pShake = st.anim.shakeP > 0 ? (Math.random()-0.5)*st.anim.shakeP : 0;
+            if(st.anim.shakeP > 0) st.anim.shakeP--;
+            this.drawSprite(Game.Assets.PlayerSprite, st.positions.pX + st.anim.pOff + pShake, st.positions.y);
+            if (st.enemy) {
+                this.drawSprite(st.enemy.sprite, st.positions.eX + st.anim.eOff, st.positions.y);
+                if (st.enemy._hit > 0) { ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.fillRect(st.positions.eX, st.positions.y, 64, 64); st.enemy._hit--; }
+                // 血条
+                ctx.fillStyle = '#222'; ctx.fillRect(st.positions.eX + st.anim.eOff, st.positions.y-15, 64, 6);
+                ctx.fillStyle = '#ff5555'; ctx.fillRect(st.positions.eX + st.anim.eOff, st.positions.y-15, 64*(Math.max(0, st.enemy.HP)/st.enemy.MAXHP), 6);
+                // 韧性条 (背景)
+                ctx.fillStyle = '#111'; ctx.fillRect(st.positions.eX + st.anim.eOff, st.positions.y-7, 64, 4);
+                // 韧性条 (填充)
+                ctx.fillStyle = '#ffffff'; 
+                let tWidth = st.enemy.maxToughnessPercent > 0 ? (st.enemy.toughnessPercent / st.enemy.maxToughnessPercent) : 0;
+                ctx.fillRect(st.positions.eX + st.anim.eOff, st.positions.y-7, 64 * Math.max(0, tWidth), 4);
+            }
+            st.fx.particles.forEach((p, i) => { p.x += p.vx; p.y += p.vy; p.life--; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 4, 4); if(p.life <= 0) st.fx.particles.splice(i, 1); });
+            st.fx.flashes.forEach((f, i) => { ctx.fillStyle = f.side==='player'?"rgba(255,0,0,0.2)":"rgba(255,255,255,0.2)"; ctx.fillRect(f.side==='player'?st.positions.pX:st.positions.eX, st.positions.y, 64, 64); f.life--; if(f.life <= 0) st.fx.flashes.splice(i, 1); });
+            st.fx.slashes.forEach((s, i) => { ctx.strokeStyle = `rgba(255,255,255,${s.life/15})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(s.x-25, s.y-25); ctx.lineTo(s.x+25, s.y+25); ctx.stroke(); s.life--; if(s.life <= 0) st.fx.slashes.splice(i, 1); });
+            st.fx.crits.forEach((c, i) => { ctx.fillStyle = c.color; ctx.font = "bold 20px monospace"; ctx.fillText(c.text, c.x, c.y); c.y += c.vy; c.life--; if(c.life <= 0) st.fx.crits.splice(i, 1); });
+            requestAnimationFrame(() => this.loop());
+        }
+    },
+    ShopModule: {
+        buyHeal() { if (Game.State.player.gold >= 100) { Game.State.player.gold -= 100; Game.State.player.hp = Game.PlayerModule.calcDerived().MAXHP; Game.UIModule.update(); Game.UIModule.pushLog("治疗成功。"); } },
+        buyChest() { if (Game.State.player.gold >= 100) { Game.State.player.gold -= 100; Game.State.player.inv.push(Game.InventoryModule.generate()); Game.UIModule.update(); Game.UIModule.pushLog("开启宝箱获得装备。"); } }
+    }
+};
+window.onload = () => { Game.RenderModule.init(); Game.UIModule.update(); };
+</script>
+</body>
+</html>
